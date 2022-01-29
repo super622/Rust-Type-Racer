@@ -2,6 +2,7 @@ use ggez::conf::{ Conf, WindowMode };
 use ggez::{ event, timer, filesystem };
 use ggez::graphics;
 use ggez::{ Context, ContextBuilder, GameResult };
+use ggez::input::keyboard::is_key_pressed;
 use ggez::mint::Point2;
 use rand::Rng;
 use rand::rngs::ThreadRng;
@@ -40,6 +41,7 @@ fn main() {
 struct MainState {
     rng: ThreadRng,
     game_over: bool,
+    current_input: String,
     score: u32,
     remaining_lifes: u32,
     words: Vec<Word>,
@@ -59,10 +61,11 @@ impl MainState {
         let start_state = MainState {
             rng: rand::thread_rng(),
             game_over: false,
+            current_input: String::new(),
             score: 0,
             remaining_lifes: 5,
             words: Vec::new(),
-            time_until_next_word: 1.0,
+            time_until_next_word: 4.0,
             screen_width: conf.window_mode.width,
             screen_height: conf.window_mode.height
         };
@@ -105,6 +108,13 @@ impl event::EventHandler for MainState {
             for word in self.words.iter_mut() {
                 word.update(seconds);
     
+                if word.label() == self.current_input {
+                    word.is_typed = true;
+
+                    // clear the input field after successfully typing word
+                    self.current_input = String::new();
+                }
+
                 if word.pos.x >= self.screen_width {
                     word.is_typed = true;
 
@@ -128,6 +138,87 @@ impl event::EventHandler for MainState {
     fn key_down_event(&mut self, ctx: &mut Context, keycode: event::KeyCode, _keymods: event::KeyMods, _repeat: bool) {
         match keycode {
             event::KeyCode::Escape => event::quit(ctx),
+            event::KeyCode::A => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "a", "A")
+            },
+            event::KeyCode::B => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "b", "B")
+            },
+            event::KeyCode::C => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "c", "C")
+            },
+            event::KeyCode::D => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "d", "D")
+            },
+            event::KeyCode::E => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "e", "E")
+            },
+            event::KeyCode::F => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "f", "F")
+            },
+            event::KeyCode::G => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "g", "G")
+            },
+            event::KeyCode::H => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "h", "H")
+            },
+            event::KeyCode::I => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "i", "I")
+            },
+            event::KeyCode::J => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "j", "J")
+            },
+            event::KeyCode::K => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "k", "K")
+            },
+            event::KeyCode::L => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "l", "L")
+            },
+            event::KeyCode::M => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "m", "M")
+            },
+            event::KeyCode::N => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "n", "N")
+            },
+            event::KeyCode::O => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "o", "O")
+            },
+            event::KeyCode::P => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "p", "P")
+            },
+            event::KeyCode::Q => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "q", "Q")
+            },
+            event::KeyCode::R => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "r", "R")
+            },
+            event::KeyCode::S => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "s", "S")
+            },
+            event::KeyCode::T => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "t", "T")
+            },
+            event::KeyCode::U => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "u", "U")
+            },
+            event::KeyCode::V => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "v", "V")
+            },
+            event::KeyCode::W => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "w", "W")
+            },
+            event::KeyCode::X => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "x", "X")
+            },
+            event::KeyCode::Y => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "y", "Y")
+            },
+            event::KeyCode::Z => {
+                self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "z", "Z")
+            },
+            event::KeyCode::Back => {
+                self.current_input.pop();
+            }
             _ => ()
         }
     }
@@ -140,6 +231,17 @@ impl event::EventHandler for MainState {
 
             return Ok(())
         }
+
+        // Draw current user input
+        let font = graphics::Font::new(ctx, "/RedHatDisplay-Regular.otf")?;
+        let mut current_input = graphics::Text::new(format!("Input: {}", self.current_input));
+        current_input.set_font(font, graphics::PxScale::from(40.0));
+
+        let bottom_left = Point2 {
+            x: 0.0,
+            y: (self.screen_height - current_input.height(ctx))
+        };
+        graphics::draw(ctx, &current_input, graphics::DrawParam::default().dest(bottom_left))?;
 
         for word in self.words.iter_mut() {
             word.draw(ctx)?;
@@ -154,4 +256,13 @@ impl event::EventHandler for MainState {
         graphics::present(ctx)?;
         Ok(())
     }
+}
+
+fn check_shift_pressed(current_input: String, ctx: &mut Context, lower_letter: &str, upper_letter: &str) -> String {
+    if is_key_pressed(ctx, event::KeyCode::LShift) ||
+       is_key_pressed(ctx, event::KeyCode::RShift) {
+        return current_input + upper_letter;
+    }
+
+    current_input + lower_letter
 }
