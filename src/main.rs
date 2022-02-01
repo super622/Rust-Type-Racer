@@ -79,7 +79,7 @@ impl MainState {
             score: 0,
             remaining_lifes: 5,
             words: Vec::new(),
-            time_until_next_word: 4.0,
+            time_until_next_word: 3.0,
             screen_width: conf.window_mode.width,
             screen_height: conf.window_mode.height,
             words_pool: words.collect()
@@ -113,11 +113,12 @@ impl event::EventHandler for MainState {
                 let random_word = self.words_pool[self.rng.gen_range(0 .. self.words_pool.len())].clone();
                 let random_speed = self.rng.gen_range(50.0 .. 200.0);
     
+                let is_color_chaning = self.rng.gen_range(0 ..= 100) < 30;
                 let word_sprite = Box::new(TextSprite::new(&random_word, ctx)?);
-                let word = Word::new(&random_word, random_point, random_speed, word_sprite)?;
+                let word = Word::new(&random_word, random_point, random_speed, word_sprite, is_color_chaning)?;
     
                 self.words.push(word);
-                self.time_until_next_word = self.rng.gen_range(2.5 .. 4.8);
+                self.time_until_next_word = self.rng.gen_range(3.0 .. 3.5);
             }
 
             for word in self.words.iter_mut() {
@@ -125,7 +126,14 @@ impl event::EventHandler for MainState {
     
                 if word.label() == self.current_input {
                     word.is_typed = true;
-                    self.score += 10;
+
+                    // color chaning words give more points
+                    if word.is_color_chaning {
+                        self.score += 20;
+                    }
+                    else {
+                        self.score += 10;
+                    }
                     // clear the input field after successfully typing word
                     self.current_input = String::new();
                 }

@@ -10,6 +10,7 @@ The idea here is a little bit different from the classic game. Words are comming
 - instant remove 5 words from the screen
 - add extra 1 life
 - slow down the words
+- autocomplete with 1 char (for example)
 
 ### Nerfs:
 - speed-up the words
