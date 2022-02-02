@@ -4,7 +4,7 @@ use ggez::graphics;
 use ggez::{ Context, ContextBuilder, GameResult };
 use ggez::input::keyboard::is_key_pressed;
 use ggez::mint::Point2;
-use rand::Rng;
+use rand::{ Rng, seq };
 use rand::rngs::ThreadRng;
 
 use type_racer::assets::TextSprite;
@@ -29,6 +29,8 @@ fn main() {
         .build()
         .unwrap();
 
+    graphics::set_window_title(&ctx, "Type Racer");
+
     if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
         let mut path = path::PathBuf::from(manifest_dir);
         path.push("resources");
@@ -44,7 +46,8 @@ struct MainState {
     rng: ThreadRng,
     game_over: bool,
     current_input: String,
-    score: u32,
+    cash: u32,
+    typed_words: u32,
     remaining_lifes: u32,
     words: Vec<Word>,
     time_until_next_word: f32,
@@ -54,6 +57,10 @@ struct MainState {
 }
 
 impl MainState {
+    const BUY_LIFE_TAX: u32 = 300;
+    const REMOVE_WORDS_TAX: u32 = 350;
+    const REMOVE_WORDS_COUNT: usize = 2;
+
     fn new(ctx: &mut Context, conf: &Conf) -> GameResult<MainState> {
 
         let file = filesystem::open(ctx, "/words.dict");
@@ -76,7 +83,8 @@ impl MainState {
             rng: rand::thread_rng(),
             game_over: false,
             current_input: String::new(),
-            score: 0,
+            cash: 0,
+            typed_words: 0,
             remaining_lifes: 5,
             words: Vec::new(),
             time_until_next_word: 3.0,
@@ -107,7 +115,7 @@ impl event::EventHandler for MainState {
                 let random_point = Point2 {
                     x: 0.0,
                     //TODO: check if 100.0 is okey for word size
-                    y: self.rng.gen_range(0.0 .. self.screen_height - 100.0)
+                    y: self.rng.gen_range(40.0 .. self.screen_height - 100.0)
                 };
             
                 let random_word = self.words_pool[self.rng.gen_range(0 .. self.words_pool.len())].clone();
@@ -118,7 +126,7 @@ impl event::EventHandler for MainState {
                 let word = Word::new(&random_word, random_point, random_speed, word_sprite, is_color_chaning)?;
     
                 self.words.push(word);
-                self.time_until_next_word = self.rng.gen_range(3.0 .. 3.5);
+                self.time_until_next_word = self.rng.gen_range(2.7 .. 3.4);
             }
 
             for word in self.words.iter_mut() {
@@ -126,13 +134,14 @@ impl event::EventHandler for MainState {
     
                 if word.label() == self.current_input {
                     word.is_typed = true;
+                    self.typed_words += 1;
 
                     // color chaning words give more points
                     if word.is_color_chaning {
-                        self.score += 20;
+                        self.cash += 20;
                     }
                     else {
-                        self.score += 10;
+                        self.cash += 10;
                     }
                     // clear the input field after successfully typing word
                     self.current_input = String::new();
@@ -159,8 +168,53 @@ impl event::EventHandler for MainState {
     }
 
     fn key_down_event(&mut self, ctx: &mut Context, keycode: event::KeyCode, _keymods: event::KeyMods, _repeat: bool) {
+
         match keycode {
             event::KeyCode::Escape => event::quit(ctx),
+            event::KeyCode::Numpad1 => {
+                if self.cash >= MainState::BUY_LIFE_TAX {
+                    self.cash -= MainState::BUY_LIFE_TAX;
+                    self.remaining_lifes += 1;
+                }
+            },
+            event::KeyCode::Key1 => {
+                if self.cash >= MainState::BUY_LIFE_TAX {
+                    self.cash -= MainState::BUY_LIFE_TAX;
+                    self.remaining_lifes += 1;
+                }
+            }
+            event::KeyCode::Numpad2 => {
+                if self.cash >= MainState::REMOVE_WORDS_TAX && self.words.len() > 0 {
+                    self.cash -= MainState::REMOVE_WORDS_TAX;
+
+                    if self.words.len() <= MainState::REMOVE_WORDS_COUNT {
+                        self.words.iter_mut().for_each(|word| word.is_typed = true);
+                    }
+                    else {
+                        let sample_indexes = seq::index::sample(&mut self.rng, self.words.len(), MainState::REMOVE_WORDS_COUNT);
+
+                        for index in sample_indexes.iter() {
+                            self.words[index].is_typed = true;
+                        }
+                    }
+                }
+            },
+            event::KeyCode::Key2 => {
+                if self.cash >= MainState::REMOVE_WORDS_TAX && self.words.len() > 0 {
+                    self.cash -= MainState::REMOVE_WORDS_TAX;
+
+                    if self.words.len() <= MainState::REMOVE_WORDS_COUNT {
+                        self.words.iter_mut().for_each(|word| word.is_typed = true);
+                    }
+                    else {
+                        let sample_indexes = seq::index::sample(&mut self.rng, self.words.len(), MainState::REMOVE_WORDS_COUNT);
+
+                        for index in sample_indexes.iter() {
+                            self.words[index].is_typed = true;
+                        }
+                    }
+                }
+            }
             event::KeyCode::A => {
                 self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "a", "A")
             },
@@ -241,7 +295,7 @@ impl event::EventHandler for MainState {
             },
             event::KeyCode::Back => {
                 self.current_input.pop();
-            }
+            },
             _ => ()
         }
     }
@@ -250,15 +304,41 @@ impl event::EventHandler for MainState {
         let background_color = graphics::Color::from_rgb(0, 0, 0);
         graphics::clear(ctx, background_color);
 
+        let font = graphics::Font::new(ctx, "/RedHatDisplay-Regular.otf")?;
+
+        // Game over scene
         if self.game_over {
 
+            let ending;
+            if self.typed_words < 5 {
+                ending = "Bummer, I know you can do better :) Try again!";
+            }
+            else if self.typed_words >= 5 && self.typed_words < 20 {
+                ending = "Not very bad!";
+            }
+            else if self.typed_words >= 20 && self.typed_words < 50 {
+                ending = "Amazing, but can you do better?"
+            }
+            else {
+                ending = "You're a madman, niiice :)"
+            }
+
+            let mut game_over_text = graphics::Text::new(format!("Game over!\nWords typed: {}\n{}", self.typed_words, ending));
+            game_over_text.set_font(font, graphics::PxScale::from(40.0));
+
+            let centered = Point2 {
+                x: (self.screen_width - game_over_text.width(ctx)) / 2.0,
+                y: (self.screen_height - game_over_text.height(ctx)) / 2.0
+            };
+
+            graphics::draw(ctx, &game_over_text, graphics::DrawParam::default().dest(centered))?;
+            graphics::present(ctx)?;
             return Ok(())
         }
 
         let label_margin = 10.0;
 
         // Draw current user input
-        let font = graphics::Font::new(ctx, "/RedHatDisplay-Regular.otf")?;
         let mut current_input = graphics::Text::new(format!("Input: {}", self.current_input));
         current_input.set_font(font, graphics::PxScale::from(40.0));
 
@@ -268,25 +348,50 @@ impl event::EventHandler for MainState {
         };
         graphics::draw(ctx, &current_input, graphics::DrawParam::default().dest(bottom_left))?;
 
-        // Draw current score
-        let mut score_label = graphics::Text::new(format!("Score: {}", self.score));
-        score_label.set_font(font, graphics::PxScale::from(40.0));
+        // Draw current cash
+        let mut cash_label = graphics::Text::new(format!("Cash: {}", self.cash));
+        cash_label.set_font(font, graphics::PxScale::from(40.0));
 
         let bottom_right = Point2 {
-            x: (self.screen_width - score_label.width(ctx) - label_margin),
-            y: (self.screen_height - score_label.height(ctx))
+            x: (self.screen_width - cash_label.width(ctx) - label_margin),
+            y: (self.screen_height - cash_label.height(ctx))
         };
-        graphics::draw(ctx, &score_label, graphics::DrawParam::default().dest(bottom_right))?;
+        graphics::draw(ctx, &cash_label, graphics::DrawParam::default().dest(bottom_right))?;
 
         // Draw remaining lifes
         let mut lifes_label = graphics::Text::new(format!("Lifes: {}", self.remaining_lifes));
         lifes_label.set_font(font, graphics::PxScale::from(40.0));
 
-        let next_to_score = Point2 {
-            x: (self.screen_width - score_label.width(ctx) - lifes_label.width(ctx) - label_margin * 2.0),
+        let next_to_cash = Point2 {
+            x: (self.screen_width - cash_label.width(ctx) - lifes_label.width(ctx) - label_margin * 2.0),
             y: (self.screen_height - lifes_label.height(ctx))
         };
-        graphics::draw(ctx, &lifes_label, graphics::DrawParam::default().dest(next_to_score))?;
+        graphics::draw(ctx, &lifes_label, graphics::DrawParam::default().dest(next_to_cash))?;
+
+        // Draw power ups
+        let mut left_margin = 0.0;
+        if self.cash >= MainState::REMOVE_WORDS_TAX {
+            let mut remove_words_label = graphics::Text::new(format!("Press 2 to remove 5 words ({} Cash)", MainState::REMOVE_WORDS_TAX));
+            remove_words_label.set_font(font, graphics::PxScale::from(34.0));
+            left_margin = remove_words_label.width(ctx) + label_margin;
+
+            let top_right = Point2 {
+                x: (self.screen_width - remove_words_label.width(ctx) - label_margin),
+                y: 0.0
+            };
+            graphics::draw(ctx, &remove_words_label, graphics::DrawParam::default().dest(top_right))?;
+        }
+
+        if self.cash >= MainState::BUY_LIFE_TAX {
+            let mut buy_life_label = graphics::Text::new(format!("Press 1 for extra life ({} Cash)", MainState::BUY_LIFE_TAX));
+            buy_life_label.set_font(font, graphics::PxScale::from(34.0));
+
+            let top_right = Point2 {
+                x: (self.screen_width - buy_life_label.width(ctx) - label_margin - left_margin),
+                y: 0.0
+            };
+            graphics::draw(ctx, &buy_life_label, graphics::DrawParam::default().dest(top_right))?;
+        }
 
         for word in self.words.iter_mut() {
             word.draw(ctx)?;
