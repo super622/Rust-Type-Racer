@@ -10,7 +10,7 @@ use crate::assets::Sprite;
 pub struct Word {
     pub pos: Point2<f32>,
     pub is_typed: bool,
-    pub is_color_chaning: bool,
+    pub is_color_changing: bool,
     rng: ThreadRng,
     label: String,
     velocity: Vector2<f32>,
@@ -18,13 +18,13 @@ pub struct Word {
 }
 
 impl Word {
-    pub fn new(label: &str, pos: Point2<f32>, speed: f32, sprite: Box<dyn Sprite>, is_color_chaning: bool) -> GameResult<Self> {
+    pub fn new(label: &str, pos: Point2<f32>, speed: f32, sprite: Box<dyn Sprite>, is_color_changing: bool) -> GameResult<Self> {
         let label = String::from(label);
 
         Ok(Word {
             pos,
             is_typed: false,
-            is_color_chaning,
+            is_color_changing,
             rng: rand::thread_rng(),
             label,
             velocity: Vector2 { x: speed, y: 0.0 },
@@ -42,7 +42,7 @@ impl Word {
     }
 
     pub fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        if self.is_color_chaning {
+        if self.is_color_changing {
             self.sprite.draw(self.pos,
                        graphics::Color::from_rgb(
                                 self.rng.gen_range(0 ..= 255),

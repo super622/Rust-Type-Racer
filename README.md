@@ -16,3 +16,29 @@ The idea here is a little bit different from the classic game. Words are comming
 - speed-up the words
 - color changing words
 - screen brightness pulsing
+
+## Installation
+
+*required [rustc with cargo](https://rustup.rs/) to be installed*
+
+- command for installing ggez dependent packages
+
+```
+sudo apt install libasound2-dev libudev-dev pkg-config
+```
+
+## Compiling and starting the game
+
+- normal
+```
+cargo run
+```
+- debug mode
+```
+DEBUG=1 cargo run
+```
+
+- release mode
+```
+cargo run --release
+```

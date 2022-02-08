@@ -121,9 +121,9 @@ impl event::EventHandler for MainState {
                 let random_word = self.words_pool[self.rng.gen_range(0 .. self.words_pool.len())].clone();
                 let random_speed = self.rng.gen_range(50.0 .. 200.0);
     
-                let is_color_chaning = self.rng.gen_range(0 ..= 100) < 30;
+                let is_color_changing = self.rng.gen_range(0 ..= 100) < 30;
                 let word_sprite = Box::new(TextSprite::new(&random_word, ctx)?);
-                let word = Word::new(&random_word, random_point, random_speed, word_sprite, is_color_chaning)?;
+                let word = Word::new(&random_word, random_point, random_speed, word_sprite, is_color_changing)?;
     
                 self.words.push(word);
                 self.time_until_next_word = self.rng.gen_range(2.7 .. 3.4);
@@ -137,7 +137,7 @@ impl event::EventHandler for MainState {
                     self.typed_words += 1;
 
                     // color chaning words give more points
-                    if word.is_color_chaning {
+                    if word.is_color_changing {
                         self.cash += 20;
                     }
                     else {
@@ -371,7 +371,7 @@ impl event::EventHandler for MainState {
         // Draw power ups
         let mut left_margin = 0.0;
         if self.cash >= MainState::REMOVE_WORDS_TAX {
-            let mut remove_words_label = graphics::Text::new(format!("Press 2 to remove 5 words ({} Cash)", MainState::REMOVE_WORDS_TAX));
+            let mut remove_words_label = graphics::Text::new(format!("Press 2 to remove {} words ({} Cash)",MainState::REMOVE_WORDS_COUNT , MainState::REMOVE_WORDS_TAX));
             remove_words_label.set_font(font, graphics::PxScale::from(34.0));
             left_margin = remove_words_label.width(ctx) + label_margin;
 
