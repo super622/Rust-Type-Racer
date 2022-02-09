@@ -1,3 +1,4 @@
+use ggez::audio::SoundSource;
 use ggez::conf::{ Conf, WindowMode };
 use ggez::{ event, timer, filesystem };
 use ggez::graphics;
@@ -7,7 +8,7 @@ use ggez::mint::Point2;
 use rand::{ Rng, seq };
 use rand::rngs::ThreadRng;
 
-use type_racer::assets::TextSprite;
+use type_racer::assets::{ Assets, TextSprite };
 use type_racer::entities::Word;
 use type_racer::debug;
 
@@ -44,6 +45,8 @@ fn main() {
 
 struct MainState {
     rng: ThreadRng,
+    assets: Assets,
+    sound_volume: f32,
     game_over: bool,
     current_input: String,
     cash: u32,
@@ -60,9 +63,13 @@ impl MainState {
     const BUY_LIFE_TAX: u32 = 300;
     const REMOVE_WORDS_TAX: u32 = 350;
     const REMOVE_WORDS_COUNT: usize = 2;
+    const INITAL_SOUND_VOLUME: f32 = 0.05;
+    const SOUND_VOLUME_STEP: f32 = 0.005;
 
     fn new(ctx: &mut Context, conf: &Conf) -> GameResult<MainState> {
-
+        let mut assets = Assets::new(ctx)?;
+        assets.background_music.set_volume(MainState::INITAL_SOUND_VOLUME);
+        let _ = assets.background_music.play(ctx);
         let file = filesystem::open(ctx, "/words.dict");
         
         if file.is_err() {
@@ -81,6 +88,8 @@ impl MainState {
 
         let start_state = MainState {
             rng: rand::thread_rng(),
+            assets: assets,
+            sound_volume: MainState::INITAL_SOUND_VOLUME,
             game_over: false,
             current_input: String::new(),
             cash: 0,
@@ -135,6 +144,8 @@ impl event::EventHandler for MainState {
                 if word.label() == self.current_input {
                     word.is_typed = true;
                     self.typed_words += 1;
+                    self.assets.word_typed_sound.set_volume(self.sound_volume);
+                    let _ = self.assets.word_typed_sound.play(ctx);
 
                     // color chaning words give more points
                     if word.is_color_changing {
@@ -214,7 +225,31 @@ impl event::EventHandler for MainState {
                         }
                     }
                 }
-            }
+            },
+            event::KeyCode::Plus => {
+                if self.sound_volume + MainState::SOUND_VOLUME_STEP <= 100.0 {
+                    self.sound_volume += MainState::SOUND_VOLUME_STEP;
+                    self.assets.background_music.set_volume(self.sound_volume);
+                }
+            },
+            event::KeyCode::NumpadAdd => {
+                if self.sound_volume + MainState::SOUND_VOLUME_STEP <= 100.0 {
+                    self.sound_volume += MainState::SOUND_VOLUME_STEP;
+                    self.assets.background_music.set_volume(self.sound_volume);
+                }
+            },
+            event::KeyCode::Minus => {
+                if self.sound_volume - MainState::SOUND_VOLUME_STEP >= 0.0 {
+                    self.sound_volume -= MainState::SOUND_VOLUME_STEP;
+                    self.assets.background_music.set_volume(self.sound_volume);
+                }
+            },
+            event::KeyCode::NumpadSubtract => {
+                if self.sound_volume - MainState::SOUND_VOLUME_STEP >= 0.0 {
+                    self.sound_volume -= MainState::SOUND_VOLUME_STEP;
+                    self.assets.background_music.set_volume(self.sound_volume);
+                }
+            },
             event::KeyCode::A => {
                 self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "a", "A")
             },
@@ -337,6 +372,16 @@ impl event::EventHandler for MainState {
         }
 
         let label_margin = 10.0;
+
+        // Draw current volume
+        let mut current_volume = graphics::Text::new(format!("Volume: {:.3}", self.sound_volume));
+        current_volume.set_font(font, graphics::PxScale::from(34.0));
+
+        let top_left = Point2 {
+            x: 0.0,
+            y: 0.0
+        };
+        graphics::draw(ctx, &current_volume, graphics::DrawParam::default().dest(top_left))?;
 
         // Draw current user input
         let mut current_input = graphics::Text::new(format!("Input: {}", self.current_input));
