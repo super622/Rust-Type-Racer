@@ -47,6 +47,7 @@ struct MainState {
     rng: ThreadRng,
     assets: Assets,
     sound_volume: f32,
+    show_info: bool,
     game_over: bool,
     current_input: String,
     cash: u32,
@@ -54,6 +55,7 @@ struct MainState {
     remaining_lifes: u32,
     words: Vec<Word>,
     time_until_next_word: f32,
+    game_speed_up: f32,
     screen_width: f32,
     screen_height: f32,
     words_pool: Vec<String>
@@ -62,6 +64,7 @@ struct MainState {
 impl MainState {
     const BUY_LIFE_TAX: u32 = 300;
     const REMOVE_WORDS_TAX: u32 = 350;
+    const SLOW_WORD_SPAWN_TAX: u32 = 1000;
     const REMOVE_WORDS_COUNT: usize = 2;
     const INITAL_SOUND_VOLUME: f32 = 0.05;
     const SOUND_VOLUME_STEP: f32 = 0.005;
@@ -90,6 +93,7 @@ impl MainState {
             rng: rand::thread_rng(),
             assets: assets,
             sound_volume: MainState::INITAL_SOUND_VOLUME,
+            show_info: false,
             game_over: false,
             current_input: String::new(),
             cash: 0,
@@ -97,6 +101,7 @@ impl MainState {
             remaining_lifes: 5,
             words: Vec::new(),
             time_until_next_word: 3.0,
+            game_speed_up: 0.0,
             screen_width: conf.window_mode.width,
             screen_height: conf.window_mode.height,
             words_pool: words.collect()
@@ -135,7 +140,10 @@ impl event::EventHandler for MainState {
                 let word = Word::new(&random_word, random_point, random_speed, word_sprite, is_color_changing)?;
     
                 self.words.push(word);
-                self.time_until_next_word = self.rng.gen_range(2.7 .. 3.4);
+                let min_word_gen_time = 3.0 - self.game_speed_up;
+                let max_word_gen_time = 3.5 - self.game_speed_up;
+                self.time_until_next_word = self.rng.gen_range(min_word_gen_time .. max_word_gen_time);
+                self.game_speed_up += 0.01;
             }
 
             for word in self.words.iter_mut() {
@@ -179,7 +187,7 @@ impl event::EventHandler for MainState {
     }
 
     fn key_down_event(&mut self, ctx: &mut Context, keycode: event::KeyCode, _keymods: event::KeyMods, _repeat: bool) {
-
+        
         match keycode {
             event::KeyCode::Escape => event::quit(ctx),
             event::KeyCode::Numpad1 => {
@@ -226,6 +234,18 @@ impl event::EventHandler for MainState {
                     }
                 }
             },
+            event::KeyCode::Key3 => {
+                if self.cash >= MainState::SLOW_WORD_SPAWN_TAX {
+                    self.cash -= MainState::SLOW_WORD_SPAWN_TAX;
+                    self.game_speed_up /= 2.0;
+                }
+            },
+            event::KeyCode::Numpad3 => {
+                if self.cash >= MainState::SLOW_WORD_SPAWN_TAX {
+                    self.cash -= MainState::SLOW_WORD_SPAWN_TAX;
+                    self.game_speed_up /= 2.0;
+                }
+            },
             event::KeyCode::Plus => {
                 if self.sound_volume + MainState::SOUND_VOLUME_STEP <= 100.0 {
                     self.sound_volume += MainState::SOUND_VOLUME_STEP;
@@ -238,17 +258,17 @@ impl event::EventHandler for MainState {
                     self.assets.background_music.set_volume(self.sound_volume);
                 }
             },
-            event::KeyCode::Minus => {
-                if self.sound_volume - MainState::SOUND_VOLUME_STEP >= 0.0 {
-                    self.sound_volume -= MainState::SOUND_VOLUME_STEP;
-                    self.assets.background_music.set_volume(self.sound_volume);
-                }
-            },
             event::KeyCode::NumpadSubtract => {
                 if self.sound_volume - MainState::SOUND_VOLUME_STEP >= 0.0 {
                     self.sound_volume -= MainState::SOUND_VOLUME_STEP;
                     self.assets.background_music.set_volume(self.sound_volume);
                 }
+            },
+            event::KeyCode::Grave => {
+                self.show_info ^= true;
+            }
+            event::KeyCode::Minus => {
+                self.current_input += "-";
             },
             event::KeyCode::A => {
                 self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "a", "A")
@@ -371,14 +391,68 @@ impl event::EventHandler for MainState {
             return Ok(())
         }
 
+        // Game info panel
+        if self.show_info {
+            let mut game_info = graphics::Text::new(
+                format!(
+"(+) to volume up
+(-) to volume down
+
+Buffs become visible when you have the required cash:
+(1) for extra life  ({}$)
+(2) for words removal  ({}$)
+(3) for slow words spawn  ({}$)
+
+(Esc) to quit",
+               MainState::BUY_LIFE_TAX,
+               MainState::REMOVE_WORDS_TAX,
+               MainState::SLOW_WORD_SPAWN_TAX));
+            game_info.set_font(font, graphics::PxScale::from(34.0));
+            let label_color = graphics::Color::from_rgb(48, 116, 115);
+
+            let centered = Point2 {
+                x: (self.screen_width - game_info.width(ctx)) / 2.0,
+                y: (self.screen_height - game_info.height(ctx)) / 2.0
+            };
+
+            let margin = 30.0;
+            let left = centered.x - margin;
+            let right = centered.x + game_info.width(ctx) + margin;
+            let top = centered.y - margin;
+            let bottom = centered.y + game_info.height(ctx) + margin;
+
+            let background = graphics::Rect::new(left, top, right - left, bottom - top);
+            let draw_mode = graphics::DrawMode::Fill(graphics::FillOptions::DEFAULT);
+            let silver = graphics::Color::from_rgb(192, 192, 192);
+            let background_mesh = graphics::MeshBuilder::new().
+                rectangle(draw_mode, background, silver).
+                unwrap().
+                build(ctx).
+                unwrap();
+
+            graphics::draw(ctx, &background_mesh, graphics::DrawParam::default())?;
+            graphics::draw(ctx, &game_info, graphics::DrawParam::default().dest(centered).color(label_color))?;
+        }
+
         let label_margin = 10.0;
 
         // Draw current volume
+        let mut right_margin = 0.0;
+        let mut options_label = graphics::Text::new(format!("(`) for Info|"));
+        options_label.set_font(font, graphics::PxScale::from(34.0));
+
+        let top_left = Point2 {
+            x: label_margin,
+            y: 0.0
+        };
+        right_margin += options_label.width(ctx) + label_margin;
+        graphics::draw(ctx, &options_label, graphics::DrawParam::default().dest(top_left))?;
+
         let mut current_volume = graphics::Text::new(format!("Volume: {:.3}", self.sound_volume));
         current_volume.set_font(font, graphics::PxScale::from(34.0));
 
         let top_left = Point2 {
-            x: 0.0,
+            x: right_margin + label_margin,
             y: 0.0
         };
         graphics::draw(ctx, &current_volume, graphics::DrawParam::default().dest(top_left))?;
@@ -415,20 +489,32 @@ impl event::EventHandler for MainState {
 
         // Draw power ups
         let mut left_margin = 0.0;
-        if self.cash >= MainState::REMOVE_WORDS_TAX {
-            let mut remove_words_label = graphics::Text::new(format!("Press 2 to remove {} words ({} Cash)",MainState::REMOVE_WORDS_COUNT , MainState::REMOVE_WORDS_TAX));
-            remove_words_label.set_font(font, graphics::PxScale::from(34.0));
-            left_margin = remove_words_label.width(ctx) + label_margin;
+        if self.cash >= MainState::SLOW_WORD_SPAWN_TAX {
+            let mut slow_word_spawn_label = graphics::Text::new(format!("(3) Slow spawn ({}$)", MainState::SLOW_WORD_SPAWN_TAX));
+            slow_word_spawn_label.set_font(font, graphics::PxScale::from(34.0));
 
             let top_right = Point2 {
-                x: (self.screen_width - remove_words_label.width(ctx) - label_margin),
+                x: (self.screen_width - slow_word_spawn_label.width(ctx) - label_margin - left_margin),
                 y: 0.0
             };
+            left_margin += slow_word_spawn_label.width(ctx) + label_margin;
+            graphics::draw(ctx, &slow_word_spawn_label, graphics::DrawParam::default().dest(top_right))?;
+        }
+
+        if self.cash >= MainState::REMOVE_WORDS_TAX {
+            let mut remove_words_label = graphics::Text::new(format!("(2) Remove {} words ({}$)",MainState::REMOVE_WORDS_COUNT , MainState::REMOVE_WORDS_TAX));
+            remove_words_label.set_font(font, graphics::PxScale::from(34.0));
+
+            let top_right = Point2 {
+                x: (self.screen_width - remove_words_label.width(ctx) - label_margin - left_margin),
+                y: 0.0
+            };
+            left_margin += remove_words_label.width(ctx) + label_margin;
             graphics::draw(ctx, &remove_words_label, graphics::DrawParam::default().dest(top_right))?;
         }
 
         if self.cash >= MainState::BUY_LIFE_TAX {
-            let mut buy_life_label = graphics::Text::new(format!("Press 1 for extra life ({} Cash)", MainState::BUY_LIFE_TAX));
+            let mut buy_life_label = graphics::Text::new(format!("(1) extra life ({}$)", MainState::BUY_LIFE_TAX));
             buy_life_label.set_font(font, graphics::PxScale::from(34.0));
 
             let top_right = Point2 {
