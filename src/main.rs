@@ -1,14 +1,13 @@
 use ggez::audio::SoundSource;
 use ggez::conf::{ Conf, WindowMode };
-use ggez::{ event, timer, filesystem };
-use ggez::graphics;
+use ggez::{ event, timer, filesystem, graphics };
 use ggez::{ Context, ContextBuilder, GameResult };
 use ggez::input::keyboard::is_key_pressed;
 use ggez::mint::Point2;
 use rand::{ Rng, seq };
 use rand::rngs::ThreadRng;
 
-use type_racer::assets::{ Assets, TextSprite };
+use type_racer::assets::{ Assets, TextSprite, Sprite };
 use type_racer::entities::Word;
 use type_racer::debug;
 
@@ -48,6 +47,7 @@ fn main() {
 struct MainState {
     rng: ThreadRng,
     assets: Assets,
+    info_panel: TextSprite,
     sound_volume: f32,
     show_info: bool,
     game_over: bool,
@@ -62,7 +62,8 @@ struct MainState {
     screen_width: f32,
     screen_height: f32,
     words_pool: Vec<String>,
-    scoreboard: Vec<String>
+    scoreboard: Vec<String>,
+    power_up_panels: Vec<TextSprite>
 }
 
 impl MainState {
@@ -73,6 +74,9 @@ impl MainState {
     const INITAL_SOUND_VOLUME: f32 = 0.05;
     const SOUND_VOLUME_STEP: f32 = 0.005;
     const SCOREBOARD_SIZE: usize = 10;
+    const TOP_PANEL_TEXT_SIZE: f32 = 34.0;
+    const BOT_PANEL_TEXT_SIZE: f32 = 40.0;
+    const CENTER_PANEL_TEXT_SIZE: f32 = 40.0;
 
     fn new(ctx: &mut Context, conf: &Conf) -> GameResult<MainState> {
         let mut assets = Assets::new(ctx)?;
@@ -80,9 +84,39 @@ impl MainState {
         let _ = assets.background_music.play(ctx);
         let words = read_file_by_lines(ctx, "/words.dict");
 
+        let info_panel_label = format!(
+"(+) to volume up
+(-) to volume down
+
+Buffs become visible when you have the required cash:
+(1) for extra life  ({}$)
+(2) for words removal  ({}$)
+(3) for slow words spawn  ({}$)
+
+(Esc) to quit",
+                           MainState::BUY_LIFE_TAX,
+                           MainState::REMOVE_WORDS_TAX,
+                           MainState::SLOW_WORD_SPAWN_TAX);
+        let info_panel = TextSprite::new(&info_panel_label, ctx, MainState::CENTER_PANEL_TEXT_SIZE)?;
+
+        let slow_word_spawn_label = format!("(3) Slow spawn ({}$)", MainState::SLOW_WORD_SPAWN_TAX);
+        let slow_word_spawn_panel = TextSprite::new(&slow_word_spawn_label, ctx, MainState::TOP_PANEL_TEXT_SIZE)?;
+
+        let remove_words_label = format!("(2) Remove {} words ({}$)",MainState::REMOVE_WORDS_COUNT , MainState::REMOVE_WORDS_TAX);
+        let remove_words_panel = TextSprite::new(&remove_words_label, ctx, MainState::TOP_PANEL_TEXT_SIZE)?;
+
+        let extra_life_label = format!("(1) extra life ({}$)", MainState::BUY_LIFE_TAX);
+        let extra_life_panel = TextSprite::new(&extra_life_label, ctx, MainState::TOP_PANEL_TEXT_SIZE)?;
+
+        let mut power_up_panels = Vec::new();
+        power_up_panels.push(slow_word_spawn_panel);
+        power_up_panels.push(remove_words_panel);
+        power_up_panels.push(extra_life_panel);
+
         let start_state = MainState {
             rng: rand::thread_rng(),
             assets: assets,
+            info_panel,
             sound_volume: MainState::INITAL_SOUND_VOLUME,
             show_info: false,
             game_over: false,
@@ -97,7 +131,8 @@ impl MainState {
             screen_width: conf.window_mode.width,
             screen_height: conf.window_mode.height,
             words_pool: words,
-            scoreboard: Vec::new()
+            scoreboard: Vec::new(),
+            power_up_panels
         };
 
         Ok(start_state)
@@ -119,10 +154,12 @@ impl event::EventHandler for MainState {
             // Spawn  words
             self.time_until_next_word -= seconds;
             if self.time_until_next_word <= 0.0 {
+                let margin = 10.0;
+                let top_height = MainState::TOP_PANEL_TEXT_SIZE + margin;
+                let bot_height = self.screen_height - MainState::BOT_PANEL_TEXT_SIZE - margin;
                 let random_point = Point2 {
                     x: 0.0,
-                    //TODO: check if 100.0 is okey for word size
-                    y: self.rng.gen_range(40.0 .. self.screen_height - 100.0)
+                    y: self.rng.gen_range(top_height .. bot_height)
                 };
             
                 let random_word = self.words_pool[self.rng.gen_range(0 .. self.words_pool.len())].clone();
@@ -130,14 +167,14 @@ impl event::EventHandler for MainState {
                 let random_speed = self.rng.gen_range(100.0 .. 300.0);
     
                 let is_color_changing = self.rng.gen_range(0 ..= 100) < 30;
-                let word_sprite = Box::new(TextSprite::new(&random_word, ctx)?);
+                let word_sprite = Box::new(TextSprite::new(&random_word, ctx, 32.0)?);
                 let word = Word::new(&random_word, random_point, random_speed, word_sprite, is_color_changing)?;
     
                 self.words.push(word);
                 let min_word_gen_time = 3.0 - self.game_speed_up;
                 let max_word_gen_time = 3.5 - self.game_speed_up;
                 self.time_until_next_word = self.rng.gen_range(min_word_gen_time .. max_word_gen_time);
-                self.game_speed_up += 0.01;
+                self.game_speed_up += 0.03;
             }
 
             for word in self.words.iter_mut() {
@@ -163,7 +200,7 @@ impl event::EventHandler for MainState {
                     else {
                         self.cash += 10;
                     }
-                    // clear the input field after successfully typing word
+                    // clear the input field after successfully typed word
                     self.current_input = String::new();
                 }
 
@@ -171,7 +208,7 @@ impl event::EventHandler for MainState {
                     word.is_typed = true;
 
                     if !debug::is_active() {
-                        // don't end the game is debug is active
+                        // don't end the game when debug is active
                         self.remaining_lifes -= 1;
 
                         if self.remaining_lifes == 0 {
@@ -191,18 +228,14 @@ impl event::EventHandler for MainState {
         
         match keycode {
             event::KeyCode::Escape => event::quit(ctx),
+            event::KeyCode::Key1 |
             event::KeyCode::Numpad1 => {
                 if self.cash >= MainState::BUY_LIFE_TAX {
                     self.cash -= MainState::BUY_LIFE_TAX;
                     self.remaining_lifes += 1;
                 }
             },
-            event::KeyCode::Key1 => {
-                if self.cash >= MainState::BUY_LIFE_TAX {
-                    self.cash -= MainState::BUY_LIFE_TAX;
-                    self.remaining_lifes += 1;
-                }
-            }
+            event::KeyCode::Key2 |
             event::KeyCode::Numpad2 => {
                 if self.cash >= MainState::REMOVE_WORDS_TAX && self.words.len() > 0 {
                     self.cash -= MainState::REMOVE_WORDS_TAX;
@@ -219,38 +252,11 @@ impl event::EventHandler for MainState {
                     }
                 }
             },
-            event::KeyCode::Key2 => {
-                if self.cash >= MainState::REMOVE_WORDS_TAX && self.words.len() > 0 {
-                    self.cash -= MainState::REMOVE_WORDS_TAX;
-
-                    if self.words.len() <= MainState::REMOVE_WORDS_COUNT {
-                        self.words.iter_mut().for_each(|word| word.is_typed = true);
-                    }
-                    else {
-                        let sample_indexes = seq::index::sample(&mut self.rng, self.words.len(), MainState::REMOVE_WORDS_COUNT);
-
-                        for index in sample_indexes.iter() {
-                            self.words[index].is_typed = true;
-                        }
-                    }
-                }
-            },
-            event::KeyCode::Key3 => {
-                if self.cash >= MainState::SLOW_WORD_SPAWN_TAX {
-                    self.cash -= MainState::SLOW_WORD_SPAWN_TAX;
-                    self.game_speed_up /= 2.0;
-                }
-            },
+            event::KeyCode::Key3 |
             event::KeyCode::Numpad3 => {
                 if self.cash >= MainState::SLOW_WORD_SPAWN_TAX {
                     self.cash -= MainState::SLOW_WORD_SPAWN_TAX;
                     self.game_speed_up /= 2.0;
-                }
-            },
-            event::KeyCode::Plus => {
-                if self.sound_volume + MainState::SOUND_VOLUME_STEP <= 100.0 {
-                    self.sound_volume += MainState::SOUND_VOLUME_STEP;
-                    self.assets.background_music.set_volume(self.sound_volume);
                 }
             },
             event::KeyCode::NumpadAdd => {
@@ -364,24 +370,30 @@ impl event::EventHandler for MainState {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        let background_color = graphics::Color::from_rgb(0, 0, 0);
+        let background_color = graphics::Color::BLACK;
         graphics::clear(ctx, background_color);
 
-        let font = graphics::Font::new(ctx, "/RedHatDisplay-Regular.otf")?;
+        let label_margin = 10.0;
+        let game_status_panel_color = graphics::Color::WHITE;
+
+        // Draw current user input
+        if !self.game_over || !self.saved_score {
+            let mut bottom_left = Point2 {
+                x: 0.0,
+                y: self.screen_height
+            };
+    
+            let current_input_label = format!("Input: {}", self.current_input);
+            let mut current_input_panel = TextSprite::new(&current_input_label, ctx, MainState::BOT_PANEL_TEXT_SIZE).unwrap();
+            bottom_left.x += label_margin;
+            bottom_left.y = self.screen_height - current_input_panel.height(ctx);
+            current_input_panel.draw(bottom_left, game_status_panel_color, ctx).unwrap();
+        }
 
         // Game over scene
         if self.game_over {
 
             if !self.saved_score {
-                let mut current_input = graphics::Text::new(format!("Input: {}", self.current_input));
-                current_input.set_font(font, graphics::PxScale::from(40.0));
-
-                let bottom_left = Point2 {
-                    x: 0.0,
-                    y: (self.screen_height - current_input.height(ctx))
-                };
-                graphics::draw(ctx, &current_input, graphics::DrawParam::default().dest(bottom_left))?;
-
                 let ending;
                 if self.score < 100.0 {
                     ending = "Bummer, I know you can do better :) Try again!";
@@ -396,26 +408,26 @@ impl event::EventHandler for MainState {
                     ending = "You're a madman, niiice :)"
                 }
 
-                let mut game_over_text = graphics::Text::new(format!("Game over!\nYour score is : {:.2}\n{}\nType username for the scoring!", self.score, ending));
-                game_over_text.set_font(font, graphics::PxScale::from(40.0));
+                let game_over_label = format!("Game over!\nYour score is : {:.2}\n{}\nType username for the scoreboard!", self.score, ending);
+                let mut game_over_panel = TextSprite::new(&game_over_label, ctx, MainState::CENTER_PANEL_TEXT_SIZE).unwrap();
 
                 let centered = Point2 {
-                    x: (self.screen_width - game_over_text.width(ctx)) / 2.0,
-                    y: (self.screen_height - game_over_text.height(ctx)) / 2.0
+                    x: (self.screen_width - game_over_panel.width(ctx)) / 2.0,
+                    y: (self.screen_height - game_over_panel.height(ctx)) / 2.0
                 };
 
-                graphics::draw(ctx, &game_over_text, graphics::DrawParam::default().dest(centered))?;
+                game_over_panel.draw(centered, game_status_panel_color, ctx).unwrap();
             }
             else {
-                let mut game_over_text = graphics::Text::new(format!("Scoreboard:\n{}", format_scoreboard(&self.scoreboard)));
-                game_over_text.set_font(font, graphics::PxScale::from(40.0));
+                let scoreboard_label = format!("Scoreboard:\n{}", format_scoreboard(&self.scoreboard));
+                let mut scoreboard_panel = TextSprite::new(&scoreboard_label, ctx, MainState::CENTER_PANEL_TEXT_SIZE).unwrap();
 
                 let centered = Point2 {
-                    x: (self.screen_width - game_over_text.width(ctx)) / 2.0,
-                    y: (self.screen_height - game_over_text.height(ctx)) / 2.0
+                    x: (self.screen_width - scoreboard_panel.width(ctx)) / 2.0,
+                    y: (self.screen_height - scoreboard_panel.height(ctx)) / 2.0
                 };
 
-                graphics::draw(ctx, &game_over_text, graphics::DrawParam::default().dest(centered))?;
+                scoreboard_panel.draw(centered, game_status_panel_color, ctx).unwrap();
             }
             
             graphics::present(ctx)?;
@@ -424,135 +436,81 @@ impl event::EventHandler for MainState {
 
         // Game info panel
         if self.show_info {
-            let mut game_info = graphics::Text::new(
-                format!(
-"(+) to volume up
-(-) to volume down
-
-Buffs become visible when you have the required cash:
-(1) for extra life  ({}$)
-(2) for words removal  ({}$)
-(3) for slow words spawn  ({}$)
-
-(Esc) to quit",
-               MainState::BUY_LIFE_TAX,
-               MainState::REMOVE_WORDS_TAX,
-               MainState::SLOW_WORD_SPAWN_TAX));
-            game_info.set_font(font, graphics::PxScale::from(34.0));
-            let label_color = graphics::Color::from_rgb(48, 116, 115);
-
             let centered = Point2 {
-                x: (self.screen_width - game_info.width(ctx)) / 2.0,
-                y: (self.screen_height - game_info.height(ctx)) / 2.0
+                x: (self.screen_width - self.info_panel.width(ctx)) / 2.0,
+                y: (self.screen_height - self.info_panel.height(ctx)) / 2.0
             };
 
-            let margin = 30.0;
-            let left = centered.x - margin;
-            let right = centered.x + game_info.width(ctx) + margin;
-            let top = centered.y - margin;
-            let bottom = centered.y + game_info.height(ctx) + margin;
-
-            let background = graphics::Rect::new(left, top, right - left, bottom - top);
-            let draw_mode = graphics::DrawMode::Fill(graphics::FillOptions::DEFAULT);
+            let info_panel_color = graphics::Color::from_rgb(48, 116, 115);
             let silver = graphics::Color::from_rgb(192, 192, 192);
-            let background_mesh = graphics::MeshBuilder::new().
-                rectangle(draw_mode, background, silver).
-                unwrap().
-                build(ctx).
-                unwrap();
 
-            graphics::draw(ctx, &background_mesh, graphics::DrawParam::default())?;
-            graphics::draw(ctx, &game_info, graphics::DrawParam::default().dest(centered).color(label_color))?;
+            draw_text_background(centered, self.info_panel.width(ctx), self.info_panel.height(ctx), 30.0, silver, ctx);
+            self.info_panel.draw(centered, info_panel_color, ctx)?;
         }
 
-        let label_margin = 10.0;
-
         // Draw current volume
-        let mut right_margin = 0.0;
-        let mut options_label = graphics::Text::new(format!("(`) for Info|"));
-        options_label.set_font(font, graphics::PxScale::from(34.0));
-
-        let top_left = Point2 {
-            x: label_margin,
-            y: 0.0
-        };
-        right_margin += options_label.width(ctx) + label_margin;
-        graphics::draw(ctx, &options_label, graphics::DrawParam::default().dest(top_left))?;
-
-        let mut current_volume = graphics::Text::new(format!("Volume: {:.3}", self.sound_volume));
-        current_volume.set_font(font, graphics::PxScale::from(34.0));
-
-        let top_left = Point2 {
-            x: right_margin + label_margin,
-            y: 0.0
-        };
-        graphics::draw(ctx, &current_volume, graphics::DrawParam::default().dest(top_left))?;
-
-        // Draw current user input
-        let mut current_input = graphics::Text::new(format!("Input: {}", self.current_input));
-        current_input.set_font(font, graphics::PxScale::from(40.0));
-
-        let bottom_left = Point2 {
+        let mut top_left = Point2 {
             x: 0.0,
-            y: (self.screen_height - current_input.height(ctx))
+            y: 0.0
         };
-        graphics::draw(ctx, &current_input, graphics::DrawParam::default().dest(bottom_left))?;
+
+        let options_label = format!("(`) for Info|");
+        let mut options_panel = TextSprite::new(&options_label, ctx, MainState::TOP_PANEL_TEXT_SIZE).unwrap();
+        top_left.x += label_margin;
+        options_panel.draw(top_left, game_status_panel_color, ctx).unwrap();
+        top_left.x += options_panel.width(ctx);
+
+        let current_volume_label = format!("Volume: {:.3}", self.sound_volume);
+        let mut current_volume_panel = TextSprite::new(&current_volume_label, ctx, MainState::TOP_PANEL_TEXT_SIZE).unwrap();
+        top_left.x += label_margin;
+        current_volume_panel.draw(top_left, game_status_panel_color, ctx).unwrap();
 
         // Draw current cash
-        let mut cash_label = graphics::Text::new(format!("Cash: {}", self.cash));
-        cash_label.set_font(font, graphics::PxScale::from(40.0));
-
-        let bottom_right = Point2 {
-            x: (self.screen_width - cash_label.width(ctx) - label_margin),
-            y: (self.screen_height - cash_label.height(ctx))
+        let mut bottom_right = Point2 {
+            x: self.screen_width,
+            y: self.screen_height
         };
-        graphics::draw(ctx, &cash_label, graphics::DrawParam::default().dest(bottom_right))?;
+
+        let cash_label = format!("Cash: {}", self.cash);
+        let mut cash_panel = TextSprite::new(&cash_label, ctx, MainState::BOT_PANEL_TEXT_SIZE).unwrap();
+        bottom_right.x -= cash_panel.width(ctx) + label_margin;
+        bottom_right.y = self.screen_height - cash_panel.height(ctx);
+        cash_panel.draw(bottom_right, game_status_panel_color, ctx).unwrap();
 
         // Draw remaining lifes
-        let mut lifes_label = graphics::Text::new(format!("Lifes: {}", self.remaining_lifes));
-        lifes_label.set_font(font, graphics::PxScale::from(40.0));
+        let lifes_label = format!("Lifes: {}", self.remaining_lifes);
+        let mut lifes_panel = TextSprite::new(&lifes_label, ctx, MainState::BOT_PANEL_TEXT_SIZE).unwrap();
+        bottom_right.x -= lifes_panel.width(ctx) + label_margin;
+        bottom_right.y = self.screen_height - lifes_panel.height(ctx);
+        lifes_panel.draw(bottom_right, game_status_panel_color, ctx).unwrap();
 
-        let next_to_cash = Point2 {
-            x: (self.screen_width - cash_label.width(ctx) - lifes_label.width(ctx) - label_margin * 2.0),
-            y: (self.screen_height - lifes_label.height(ctx))
-        };
-        graphics::draw(ctx, &lifes_label, graphics::DrawParam::default().dest(next_to_cash))?;
+        // Draw current score
+        let score_label = format!("Score: {:.2}", self.score);
+        let mut score_panel = TextSprite::new(&score_label, ctx, MainState::BOT_PANEL_TEXT_SIZE).unwrap();
+        bottom_right.x -= score_panel.width(ctx) + label_margin;
+        bottom_right.y = self.screen_height - score_panel.height(ctx);
+        score_panel.draw(bottom_right, game_status_panel_color, ctx).unwrap();
 
         // Draw power ups
-        let mut left_margin = 0.0;
-        if self.cash >= MainState::SLOW_WORD_SPAWN_TAX {
-            let mut slow_word_spawn_label = graphics::Text::new(format!("(3) Slow spawn ({}$)", MainState::SLOW_WORD_SPAWN_TAX));
-            slow_word_spawn_label.set_font(font, graphics::PxScale::from(34.0));
+        let power_up_color = graphics::Color::WHITE;
+        let mut top_right = Point2 {
+            x: self.screen_width,
+            y: 0.0
+        };
 
-            let top_right = Point2 {
-                x: (self.screen_width - slow_word_spawn_label.width(ctx) - label_margin - left_margin),
-                y: 0.0
-            };
-            left_margin += slow_word_spawn_label.width(ctx) + label_margin;
-            graphics::draw(ctx, &slow_word_spawn_label, graphics::DrawParam::default().dest(top_right))?;
+        if self.cash >= MainState::SLOW_WORD_SPAWN_TAX {
+            top_right.x -= self.power_up_panels[0].width(ctx) + label_margin;
+            self.power_up_panels[0].draw(top_right, power_up_color, ctx).unwrap();
         }
 
         if self.cash >= MainState::REMOVE_WORDS_TAX {
-            let mut remove_words_label = graphics::Text::new(format!("(2) Remove {} words ({}$)",MainState::REMOVE_WORDS_COUNT , MainState::REMOVE_WORDS_TAX));
-            remove_words_label.set_font(font, graphics::PxScale::from(34.0));
-
-            let top_right = Point2 {
-                x: (self.screen_width - remove_words_label.width(ctx) - label_margin - left_margin),
-                y: 0.0
-            };
-            left_margin += remove_words_label.width(ctx) + label_margin;
-            graphics::draw(ctx, &remove_words_label, graphics::DrawParam::default().dest(top_right))?;
+            top_right.x -= self.power_up_panels[1].width(ctx) + label_margin;
+            self.power_up_panels[1].draw(top_right, power_up_color, ctx).unwrap();
         }
 
         if self.cash >= MainState::BUY_LIFE_TAX {
-            let mut buy_life_label = graphics::Text::new(format!("(1) extra life ({}$)", MainState::BUY_LIFE_TAX));
-            buy_life_label.set_font(font, graphics::PxScale::from(34.0));
-
-            let top_right = Point2 {
-                x: (self.screen_width - buy_life_label.width(ctx) - label_margin - left_margin),
-                y: 0.0
-            };
-            graphics::draw(ctx, &buy_life_label, graphics::DrawParam::default().dest(top_right))?;
+            top_right.x -= self.power_up_panels[2].width(ctx) + label_margin;
+            self.power_up_panels[2].draw(top_right, power_up_color, ctx).unwrap();
         }
 
         for word in self.words.iter_mut() {
@@ -646,9 +604,26 @@ fn format_scoreboard(scoreboard: &Vec<String>) -> String {
 
     for (index,score) in scoreboard.iter().enumerate()
     {
-        let formatted = format!("{}) {}\n", index, score);
+        let formatted = format!("{}) {}\n", index + 1, score);
         result.push_str(&formatted);
     }
 
     result
+}
+
+fn draw_text_background(text_pos: Point2<f32>, text_width: f32, text_height: f32, margin: f32, color: graphics::Color, ctx: &mut Context) {
+    let left = text_pos.x - margin;
+    let right = text_pos.x + text_width + margin;
+    let top = text_pos.y - margin;
+    let bottom = text_pos.y + text_height + margin;
+
+    let background = graphics::Rect::new(left, top, right - left, bottom - top);
+    let draw_mode = graphics::DrawMode::Fill(graphics::FillOptions::DEFAULT);
+    let background_mesh = graphics::MeshBuilder::new().
+        rectangle(draw_mode, background, color).
+        unwrap().
+        build(ctx).
+        unwrap();
+
+    graphics::draw(ctx, &background_mesh, graphics::DrawParam::default()).unwrap();
 }

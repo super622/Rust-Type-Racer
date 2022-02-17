@@ -30,14 +30,14 @@ pub trait Sprite: Debug {
 
 #[derive(Debug)]
 pub struct TextSprite {
-    text: graphics::Text
+    text: graphics::Text,
 }
 
 impl TextSprite {
-    pub fn new(label: &str, ctx: &mut Context) -> GameResult<TextSprite> {
+    pub fn new(label: &str, ctx: &mut Context, font_size: f32) -> GameResult<TextSprite> {
         let font = graphics::Font::new(ctx, "/RedHatDisplay-Regular.otf")?;
         let mut text = graphics::Text::new(label);
-        text.set_font(font, graphics::PxScale::from(32.0));
+        text.set_font(font, graphics::PxScale::from(font_size));
         Ok(TextSprite { text })
     }
 }

@@ -7,15 +7,22 @@ The idea here is a little bit different from the classic game. Words are comming
 ## Buffs && Nurfs
 
 ### Buffs:
-- instant remove 5 words from the screen
-- add extra 1 life
-- slow down the words
-- autocomplete with 1 char (for example)
+- instant random words removal from the screen
+- extra 1 life
+- slow down the word spawn
+- autocomplete with 1 char (?)
 
 ### Nerfs:
-- speed-up the words
+- speed-up the words over time
 - color changing words
-- screen brightness pulsing
+- screen shaking
+
+## Scoreboard
+The scoreboard is haved in the user home directory.
+For linux:
+```
+~/.config/type_racer/scoring.data
+```
 
 ## Installation
 
