@@ -12,10 +12,11 @@ use type_racer::assets::{ Assets, TextSprite };
 use type_racer::entities::Word;
 use type_racer::debug;
 
+use std::mem::swap;
 use std::str;
 use std::env;
 use std::path;
-use std::io::Read;
+use std::io::{Read, Write};
 
 fn main() {
     let conf = Conf::new()
@@ -34,6 +35,7 @@ fn main() {
 
     if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
         let mut path = path::PathBuf::from(manifest_dir);
+        
         path.push("resources");
         filesystem::mount(&mut ctx, &path, true);
     }
@@ -49,16 +51,18 @@ struct MainState {
     sound_volume: f32,
     show_info: bool,
     game_over: bool,
+    saved_score: bool,
     current_input: String,
     cash: u32,
-    typed_words: u32,
+    score: f32,
     remaining_lifes: u32,
     words: Vec<Word>,
     time_until_next_word: f32,
     game_speed_up: f32,
     screen_width: f32,
     screen_height: f32,
-    words_pool: Vec<String>
+    words_pool: Vec<String>,
+    scoreboard: Vec<String>
 }
 
 impl MainState {
@@ -68,26 +72,13 @@ impl MainState {
     const REMOVE_WORDS_COUNT: usize = 2;
     const INITAL_SOUND_VOLUME: f32 = 0.05;
     const SOUND_VOLUME_STEP: f32 = 0.005;
+    const SCOREBOARD_SIZE: usize = 10;
 
     fn new(ctx: &mut Context, conf: &Conf) -> GameResult<MainState> {
         let mut assets = Assets::new(ctx)?;
         assets.background_music.set_volume(MainState::INITAL_SOUND_VOLUME);
         let _ = assets.background_music.play(ctx);
-        let file = filesystem::open(ctx, "/words.dict");
-        
-        if file.is_err() {
-            panic!("Missing words dictionary!");
-        }
-
-        let mut buffer = Vec::new();
-        let read_size = file?.read_to_end(&mut buffer);
-
-        if read_size.is_err() || read_size? == 0 {
-            panic!("Empty file with words dictionary!");
-        }
-
-        let words = str::from_utf8(&buffer).unwrap().split('\n').collect::<Vec<&str>>();
-        let words = words.iter().map(|x| x.to_string());
+        let words = read_file_by_lines(ctx, "/words.dict");
 
         let start_state = MainState {
             rng: rand::thread_rng(),
@@ -95,16 +86,18 @@ impl MainState {
             sound_volume: MainState::INITAL_SOUND_VOLUME,
             show_info: false,
             game_over: false,
+            saved_score: false,
             current_input: String::new(),
             cash: 0,
-            typed_words: 0,
+            score: 0.0,
             remaining_lifes: 5,
             words: Vec::new(),
             time_until_next_word: 3.0,
             game_speed_up: 0.0,
             screen_width: conf.window_mode.width,
             screen_height: conf.window_mode.height,
-            words_pool: words.collect()
+            words_pool: words,
+            scoreboard: Vec::new()
         };
 
         Ok(start_state)
@@ -133,7 +126,8 @@ impl event::EventHandler for MainState {
                 };
             
                 let random_word = self.words_pool[self.rng.gen_range(0 .. self.words_pool.len())].clone();
-                let random_speed = self.rng.gen_range(50.0 .. 200.0);
+                
+                let random_speed = self.rng.gen_range(100.0 .. 300.0);
     
                 let is_color_changing = self.rng.gen_range(0 ..= 100) < 30;
                 let word_sprite = Box::new(TextSprite::new(&random_word, ctx)?);
@@ -151,7 +145,14 @@ impl event::EventHandler for MainState {
     
                 if word.label() == self.current_input {
                     word.is_typed = true;
-                    self.typed_words += 1;
+                    let color_multi = {
+                        if word.is_color_changing {
+                            2.0;
+                        }
+
+                        1.0
+                    };
+                    self.score += word.get_speed() * color_multi * word.get_len() / 100.0;
                     self.assets.word_typed_sound.set_volume(self.sound_volume);
                     let _ = self.assets.word_typed_sound.play(ctx);
 
@@ -270,6 +271,13 @@ impl event::EventHandler for MainState {
             event::KeyCode::Minus => {
                 self.current_input += "-";
             },
+            event::KeyCode::Return => {
+                if !self.saved_score {
+                    self.scoreboard = save_score(ctx, self.current_input.clone(), self.score);
+                    self.current_input = String::new();
+                    self.saved_score = true;
+                }
+            },
             event::KeyCode::A => {
                 self.current_input = check_shift_pressed(self.current_input.clone(), ctx, "a", "A")
             },
@@ -364,29 +372,52 @@ impl event::EventHandler for MainState {
         // Game over scene
         if self.game_over {
 
-            let ending;
-            if self.typed_words < 5 {
-                ending = "Bummer, I know you can do better :) Try again!";
-            }
-            else if self.typed_words >= 5 && self.typed_words < 20 {
-                ending = "Not very bad!";
-            }
-            else if self.typed_words >= 20 && self.typed_words < 50 {
-                ending = "Amazing, but can you do better?"
+            if !self.saved_score {
+                let mut current_input = graphics::Text::new(format!("Input: {}", self.current_input));
+                current_input.set_font(font, graphics::PxScale::from(40.0));
+
+                let bottom_left = Point2 {
+                    x: 0.0,
+                    y: (self.screen_height - current_input.height(ctx))
+                };
+                graphics::draw(ctx, &current_input, graphics::DrawParam::default().dest(bottom_left))?;
+
+                let ending;
+                if self.score < 100.0 {
+                    ending = "Bummer, I know you can do better :) Try again!";
+                }
+                else if self.score >= 100.0 && self.score < 500.0 {
+                    ending = "Not very bad!";
+                }
+                else if self.score >= 500.0 && self.score < 1000.0 {
+                    ending = "Amazing, but can you do better?"
+                }
+                else {
+                    ending = "You're a madman, niiice :)"
+                }
+
+                let mut game_over_text = graphics::Text::new(format!("Game over!\nYour score is : {:.2}\n{}\nType username for the scoring!", self.score, ending));
+                game_over_text.set_font(font, graphics::PxScale::from(40.0));
+
+                let centered = Point2 {
+                    x: (self.screen_width - game_over_text.width(ctx)) / 2.0,
+                    y: (self.screen_height - game_over_text.height(ctx)) / 2.0
+                };
+
+                graphics::draw(ctx, &game_over_text, graphics::DrawParam::default().dest(centered))?;
             }
             else {
-                ending = "You're a madman, niiice :)"
+                let mut game_over_text = graphics::Text::new(format!("Scoreboard:\n{}", format_scoreboard(&self.scoreboard)));
+                game_over_text.set_font(font, graphics::PxScale::from(40.0));
+
+                let centered = Point2 {
+                    x: (self.screen_width - game_over_text.width(ctx)) / 2.0,
+                    y: (self.screen_height - game_over_text.height(ctx)) / 2.0
+                };
+
+                graphics::draw(ctx, &game_over_text, graphics::DrawParam::default().dest(centered))?;
             }
-
-            let mut game_over_text = graphics::Text::new(format!("Game over!\nWords typed: {}\n{}", self.typed_words, ending));
-            game_over_text.set_font(font, graphics::PxScale::from(40.0));
-
-            let centered = Point2 {
-                x: (self.screen_width - game_over_text.width(ctx)) / 2.0,
-                y: (self.screen_height - game_over_text.height(ctx)) / 2.0
-            };
-
-            graphics::draw(ctx, &game_over_text, graphics::DrawParam::default().dest(centered))?;
+            
             graphics::present(ctx)?;
             return Ok(())
         }
@@ -546,4 +577,78 @@ fn check_shift_pressed(current_input: String, ctx: &mut Context, lower_letter: &
     }
 
     current_input + lower_letter
+}
+
+fn read_file_by_lines(ctx: &Context, path: &str) -> Vec<String> {
+    let file = filesystem::open(ctx, path);
+        
+    if file.is_err() {
+        panic!("Error with opening {}!", path);
+    }
+
+    let mut buffer = Vec::new();
+    let read_size = file.unwrap().read_to_end(&mut buffer);
+
+    if read_size.is_err() || read_size.unwrap() == 0 {
+        panic!("Empty file {}!", path);
+    }
+
+    let words = str::from_utf8(&buffer).unwrap().split('\n').collect::<Vec<&str>>();
+    words.iter().map(|x| x.to_string()).collect::<Vec<String>>()
+}
+
+fn save_score(ctx: &Context, username: String, score: f32) -> Vec<String> {
+    let mut file;
+    if filesystem::exists(ctx, "/scoring.data") {
+        let mut scores = read_file_by_lines(ctx, "/scoring.data");
+
+        let mut new_line = format!("{} {:.2}", username, score);
+        let mut insert = false;
+        for line in scores.iter_mut() {
+            let split = line.split(" ").collect::<Vec<&str>>();
+            let saved_score = split[split.len() - 1].parse::<f32>().unwrap();
+
+            if saved_score < score
+            {
+                insert = true;
+            }
+
+            if insert {
+                swap(line, &mut new_line);
+            }
+        }
+
+        if scores.len() <= MainState::SCOREBOARD_SIZE
+        {
+            scores.push(new_line);
+        }
+
+        file = filesystem::create(ctx, "/scoring.data").unwrap();
+
+        let _ = file.write(scores.join("\n").as_bytes());
+
+        return scores;
+    }
+    else {
+        file = filesystem::create(ctx, "/scoring.data").unwrap();
+    }
+
+    let new_score = format!("{} {:.2}", username, score);
+    let _ = file.write(new_score.as_bytes());
+    let mut result = Vec::new();
+    result.push(new_score);
+
+    result
+}
+
+fn format_scoreboard(scoreboard: &Vec<String>) -> String {
+    let mut result = String::new();
+
+    for (index,score) in scoreboard.iter().enumerate()
+    {
+        let formatted = format!("{}) {}\n", index, score);
+        result.push_str(&formatted);
+    }
+
+    result
 }

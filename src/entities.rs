@@ -41,6 +41,14 @@ impl Word {
         self.pos.y += self.velocity.y * seconds;
     }
 
+    pub fn get_speed(&mut self) -> f32 {
+        self.velocity.x
+    }
+
+    pub fn get_len(&mut self) -> f32 {
+        self.label.len() as f32
+    }
+
     pub fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         if self.is_color_changing {
             self.sprite.draw(self.pos,
