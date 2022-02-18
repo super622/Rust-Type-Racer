@@ -41,6 +41,11 @@ impl Word {
         self.pos.y += self.velocity.y * seconds;
     }
 
+    pub fn translate(&mut self, translation: Point2<f32>) {
+        self.pos.x += translation.x;
+        self.pos.y += translation.y;
+    }
+
     pub fn get_speed(&mut self) -> f32 {
         self.velocity.x
     }

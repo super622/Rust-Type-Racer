@@ -59,6 +59,9 @@ struct MainState {
     words: Vec<Word>,
     time_until_next_word: f32,
     game_speed_up: f32,
+    time_until_shake: f32,
+    shake_screen: bool,
+    shake_time: f32,
     screen_width: f32,
     screen_height: f32,
     words_pool: Vec<String>,
@@ -77,6 +80,8 @@ impl MainState {
     const TOP_PANEL_TEXT_SIZE: f32 = 34.0;
     const BOT_PANEL_TEXT_SIZE: f32 = 40.0;
     const CENTER_PANEL_TEXT_SIZE: f32 = 40.0;
+    const SHAKE_DURATION: f32 = 1.00;
+    const SHAKE_MAGNITUDE: f32 = 3.0;
 
     fn new(ctx: &mut Context, conf: &Conf) -> GameResult<MainState> {
         let mut assets = Assets::new(ctx)?;
@@ -128,6 +133,9 @@ Buffs become visible when you have the required cash:
             words: Vec::new(),
             time_until_next_word: 3.0,
             game_speed_up: 0.0,
+            time_until_shake: 10.0,
+            shake_screen: false,
+            shake_time: MainState::SHAKE_DURATION,
             screen_width: conf.window_mode.width,
             screen_height: conf.window_mode.height,
             words_pool: words,
@@ -150,6 +158,20 @@ impl event::EventHandler for MainState {
         while timer::check_update_time(ctx, FPS_CAP)
         {
             let seconds = 1.0 / (FPS_CAP as f32);
+
+            self.time_until_shake -= seconds;
+            if self.time_until_shake <= 0.0 {
+                self.time_until_shake = 10.0;
+                self.shake_screen = true;
+            }
+
+            if self.shake_screen {
+                self.shake_time -= seconds;
+                if self.shake_time <= 0.0 {
+                    self.shake_time = MainState::SHAKE_DURATION;
+                    self.shake_screen = false;
+                }
+            }
 
             // Spawn  words
             self.time_until_next_word -= seconds;
@@ -375,6 +397,18 @@ impl event::EventHandler for MainState {
 
         let label_margin = 10.0;
         let game_status_panel_color = graphics::Color::WHITE;
+        let mut shake_translation: Point2<f32> = Point2 {
+            x: 0.0,
+            y: 0.0
+        };
+
+        if self.shake_screen {
+            let dx = self.rng.gen_range(-MainState::SHAKE_MAGNITUDE ..=MainState::SHAKE_MAGNITUDE);
+            let dy = self.rng.gen_range(-MainState::SHAKE_MAGNITUDE ..=MainState::SHAKE_MAGNITUDE);
+
+            shake_translation.x = dx;
+            shake_translation.y = dy;
+        }
 
         // Draw current user input
         if !self.game_over || !self.saved_score {
@@ -383,6 +417,8 @@ impl event::EventHandler for MainState {
                 y: self.screen_height
             };
     
+            translate(&mut bottom_left, &shake_translation);
+
             let current_input_label = format!("Input: {}", self.current_input);
             let mut current_input_panel = TextSprite::new(&current_input_label, ctx, MainState::BOT_PANEL_TEXT_SIZE).unwrap();
             bottom_left.x += label_margin;
@@ -454,6 +490,8 @@ impl event::EventHandler for MainState {
             y: 0.0
         };
 
+        translate(&mut top_left, &shake_translation);
+
         let options_label = format!("(`) for Info|");
         let mut options_panel = TextSprite::new(&options_label, ctx, MainState::TOP_PANEL_TEXT_SIZE).unwrap();
         top_left.x += label_margin;
@@ -471,25 +509,30 @@ impl event::EventHandler for MainState {
             y: self.screen_height
         };
 
+        translate(&mut bottom_right, &shake_translation);
+
         let cash_label = format!("Cash: {}", self.cash);
         let mut cash_panel = TextSprite::new(&cash_label, ctx, MainState::BOT_PANEL_TEXT_SIZE).unwrap();
         bottom_right.x -= cash_panel.width(ctx) + label_margin;
-        bottom_right.y = self.screen_height - cash_panel.height(ctx);
+        bottom_right.y -= cash_panel.height(ctx);
         cash_panel.draw(bottom_right, game_status_panel_color, ctx).unwrap();
+        bottom_right.y += cash_panel.height(ctx);
 
         // Draw remaining lifes
         let lifes_label = format!("Lifes: {}", self.remaining_lifes);
         let mut lifes_panel = TextSprite::new(&lifes_label, ctx, MainState::BOT_PANEL_TEXT_SIZE).unwrap();
         bottom_right.x -= lifes_panel.width(ctx) + label_margin;
-        bottom_right.y = self.screen_height - lifes_panel.height(ctx);
+        bottom_right.y -= lifes_panel.height(ctx);
         lifes_panel.draw(bottom_right, game_status_panel_color, ctx).unwrap();
+        bottom_right.y += lifes_panel.height(ctx);
 
         // Draw current score
         let score_label = format!("Score: {:.2}", self.score);
         let mut score_panel = TextSprite::new(&score_label, ctx, MainState::BOT_PANEL_TEXT_SIZE).unwrap();
         bottom_right.x -= score_panel.width(ctx) + label_margin;
-        bottom_right.y = self.screen_height - score_panel.height(ctx);
+        bottom_right.y -= score_panel.height(ctx);
         score_panel.draw(bottom_right, game_status_panel_color, ctx).unwrap();
+        bottom_right.y += score_panel.height(ctx);
 
         // Draw power ups
         let power_up_color = graphics::Color::WHITE;
@@ -497,6 +540,8 @@ impl event::EventHandler for MainState {
             x: self.screen_width,
             y: 0.0
         };
+
+        translate(&mut top_right, &shake_translation);
 
         if self.cash >= MainState::SLOW_WORD_SPAWN_TAX {
             top_right.x -= self.power_up_panels[0].width(ctx) + label_margin;
@@ -514,6 +559,7 @@ impl event::EventHandler for MainState {
         }
 
         for word in self.words.iter_mut() {
+            word.translate(shake_translation);
             word.draw(ctx)?;
         }
 
@@ -626,4 +672,9 @@ fn draw_text_background(text_pos: Point2<f32>, text_width: f32, text_height: f32
         unwrap();
 
     graphics::draw(ctx, &background_mesh, graphics::DrawParam::default()).unwrap();
+}
+
+fn translate(pos: &mut Point2<f32>, trans: &Point2<f32>) {
+    pos.x += trans.x;
+    pos.y += trans.y;
 }

@@ -19,7 +19,8 @@ The idea here is a little bit different from the classic game. Words are comming
 
 ## Scoreboard
 The scoreboard is haved in the user home directory.
-For linux:
+
+For Linux:
 ```
 ~/.config/type_racer/scoring.data
 ```
