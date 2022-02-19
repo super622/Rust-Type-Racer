@@ -10,12 +10,12 @@ use rand::rngs::ThreadRng;
 use type_racer::assets::{ Assets, TextSprite, Sprite };
 use type_racer::entities::Word;
 use type_racer::debug;
+use type_racer::draw_helper;
+use type_racer::filesystem_helper;
 
-use std::mem::swap;
 use std::str;
 use std::env;
 use std::path;
-use std::io::{Read, Write};
 
 fn main() {
     let conf = Conf::new()
@@ -87,7 +87,7 @@ impl MainState {
         let mut assets = Assets::new(ctx)?;
         assets.background_music.set_volume(MainState::INITAL_SOUND_VOLUME);
         let _ = assets.background_music.play(ctx);
-        let words = read_file_by_lines(ctx, "/words.dict");
+        let words = filesystem_helper::read_file_by_lines(ctx, "/words.dict");
 
         let info_panel_label = format!(
 "(+) to volume up
@@ -295,7 +295,7 @@ impl event::EventHandler for MainState {
             },
             event::KeyCode::Return => {
                 if !self.saved_score {
-                    self.scoreboard = save_score(ctx, self.current_input.clone(), self.score);
+                    self.scoreboard = filesystem_helper::save_score(ctx, self.current_input.clone(), self.score, MainState::SCOREBOARD_SIZE);
                     self.current_input = String::new();
                     self.saved_score = true;
                 }
@@ -411,7 +411,7 @@ impl event::EventHandler for MainState {
                 y: self.screen_height
             };
     
-            translate(&mut bottom_left, &shake_translation);
+            draw_helper::translate(&mut bottom_left, &shake_translation);
 
             let current_input_label = format!("Input: {}", self.current_input);
             let mut current_input_panel = TextSprite::new(&current_input_label, ctx, MainState::BOT_PANEL_TEXT_SIZE).unwrap();
@@ -449,7 +449,7 @@ impl event::EventHandler for MainState {
                 game_over_panel.draw(centered, game_status_panel_color, ctx).unwrap();
             }
             else {
-                let scoreboard_label = format!("Scoreboard:\n{}", format_scoreboard(&self.scoreboard));
+                let scoreboard_label = format!("Scoreboard:\n{}", draw_helper::format_scoreboard(&self.scoreboard));
                 let mut scoreboard_panel = TextSprite::new(&scoreboard_label, ctx, MainState::CENTER_PANEL_TEXT_SIZE).unwrap();
 
                 let centered = Point2 {
@@ -474,7 +474,7 @@ impl event::EventHandler for MainState {
             let info_panel_color = graphics::Color::from_rgb(48, 116, 115);
             let silver = graphics::Color::from_rgb(192, 192, 192);
 
-            draw_text_background(centered, self.info_panel.width(ctx), self.info_panel.height(ctx), 30.0, silver, ctx);
+            draw_helper::draw_text_background(centered, self.info_panel.width(ctx), self.info_panel.height(ctx), 30.0, silver, ctx);
             self.info_panel.draw(centered, info_panel_color, ctx)?;
         }
 
@@ -484,7 +484,7 @@ impl event::EventHandler for MainState {
             y: 0.0
         };
 
-        translate(&mut top_left, &shake_translation);
+        draw_helper::translate(&mut top_left, &shake_translation);
 
         let options_label = format!("(`) for Info|");
         let mut options_panel = TextSprite::new(&options_label, ctx, MainState::TOP_PANEL_TEXT_SIZE).unwrap();
@@ -503,7 +503,7 @@ impl event::EventHandler for MainState {
             y: self.screen_height
         };
 
-        translate(&mut bottom_right, &shake_translation);
+        draw_helper::translate(&mut bottom_right, &shake_translation);
 
         let cash_label = format!("Cash: {:.2}", self.cash);
         let mut cash_panel = TextSprite::new(&cash_label, ctx, MainState::BOT_PANEL_TEXT_SIZE).unwrap();
@@ -535,7 +535,7 @@ impl event::EventHandler for MainState {
             y: 0.0
         };
 
-        translate(&mut top_right, &shake_translation);
+        draw_helper::translate(&mut top_right, &shake_translation);
 
         if self.cash >= MainState::SLOW_WORD_SPAWN_TAX {
             top_right.x -= self.power_up_panels[0].width(ctx) + label_margin;
@@ -580,105 +580,4 @@ fn check_shift_pressed(current_input: String, ctx: &mut Context, lower_letter: &
     }
 
     current_input + lower_letter
-}
-
-fn read_file_by_lines(ctx: &Context, path: &str) -> Vec<String> {
-    let file = filesystem::open(ctx, path);
-        
-    if file.is_err() {
-        panic!("Error with opening {}!", path);
-    }
-
-    let mut buffer = Vec::new();
-    let read_size = file.unwrap().read_to_end(&mut buffer);
-
-    if read_size.is_err() || read_size.unwrap() == 0 {
-        panic!("Empty file {}!", path);
-    }
-
-    let words = str::from_utf8(&buffer).unwrap().split('\n').collect::<Vec<&str>>();
-    words.iter().map(|x| x.to_string()).collect::<Vec<String>>()
-}
-
-fn save_score(ctx: &Context, username: String, score: f32) -> Vec<String> {
-    let mut file;
-    if filesystem::exists(ctx, "/scoring.data") {
-        let mut scores = read_file_by_lines(ctx, "/scoring.data");
-
-        // check for empty line at the end
-        if scores.len() > 0 && scores[scores.len() - 1] == "" {
-            scores.pop();
-        }
-
-        let mut new_line = format!("{} {:.2}", username, score);
-        let mut insert = false;
-        for line in scores.iter_mut() {
-            let split = line.split(" ").collect::<Vec<&str>>();
-            let saved_score = split[split.len() - 1].parse::<f32>().unwrap();
-
-            if saved_score < score
-            {
-                insert = true;
-            }
-
-            if insert {
-                swap(line, &mut new_line);
-            }
-        }
-
-        if scores.len() < MainState::SCOREBOARD_SIZE
-        {
-            scores.push(new_line);
-        }
-
-        file = filesystem::create(ctx, "/scoring.data").unwrap();
-
-        let _ = file.write(scores.join("\n").as_bytes());
-
-        return scores;
-    }
-    else {
-        file = filesystem::create(ctx, "/scoring.data").unwrap();
-    }
-
-    let new_score = format!("{} {:.2}", username, score);
-    let _ = file.write(new_score.as_bytes());
-    let mut result = Vec::new();
-    result.push(new_score);
-
-    result
-}
-
-fn format_scoreboard(scoreboard: &Vec<String>) -> String {
-    let mut result = String::new();
-
-    for (index,score) in scoreboard.iter().enumerate()
-    {
-        let formatted = format!("{}) {}\n", index + 1, score);
-        result.push_str(&formatted);
-    }
-
-    result
-}
-
-fn draw_text_background(text_pos: Point2<f32>, text_width: f32, text_height: f32, margin: f32, color: graphics::Color, ctx: &mut Context) {
-    let left = text_pos.x - margin;
-    let right = text_pos.x + text_width + margin;
-    let top = text_pos.y - margin;
-    let bottom = text_pos.y + text_height + margin;
-
-    let background = graphics::Rect::new(left, top, right - left, bottom - top);
-    let draw_mode = graphics::DrawMode::Fill(graphics::FillOptions::DEFAULT);
-    let background_mesh = graphics::MeshBuilder::new().
-        rectangle(draw_mode, background, color).
-        unwrap().
-        build(ctx).
-        unwrap();
-
-    graphics::draw(ctx, &background_mesh, graphics::DrawParam::default()).unwrap();
-}
-
-fn translate(pos: &mut Point2<f32>, trans: &Point2<f32>) {
-    pos.x += trans.x;
-    pos.y += trans.y;
 }

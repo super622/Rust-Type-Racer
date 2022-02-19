@@ -36,4 +36,67 @@ quickcheck! {
 
         word.pos.x > old_pos.x && word.pos.y == old_pos.y
     }
+
+    fn word_get_label(label: String) -> bool {
+        let mock_sprite = Box::new(MockSprite { width: 100.0, height: 100.0});
+        let point = Point2 {
+            x: 0.0,
+            y: 0.0
+        };
+        let word = Word::new(&label, point, 10.0, mock_sprite, false).unwrap();
+
+        word.label() == &label
+    }
+
+    fn word_translate(x: f32, y: f32) -> bool {
+        let mock_sprite = Box::new(MockSprite { width: 100.0, height: 100.0});
+        let point = Point2 {
+            x: 0.0,
+            y: 0.0
+        };
+        let mut word = Word::new("test", point, 10.0, mock_sprite, false).unwrap();
+        let old_pos = word.pos;
+        word.translate(Point2 { x, y });
+
+        ((x == 0.0 && old_pos.x == word.pos.x) ||
+        (x != 0.0 && old_pos.x != word.pos.x)) &&
+        ((y == 0.0 && old_pos.y == word.pos.y) ||
+        (y != 0.0 && old_pos.y != word.pos.y))
+    }
+
+    fn word_reset_translation(x: f32, y: f32) -> bool {
+        let mock_sprite = Box::new(MockSprite { width: 100.0, height: 100.0});
+        let point = Point2 {
+            x: 0.0,
+            y: 0.0
+        };
+        let mut word = Word::new("test", point, 10.0, mock_sprite, false).unwrap();
+        let old_pos = word.pos;
+        word.translate(Point2 { x, y });
+        word.reset_translation();
+
+        old_pos.x == word.pos.x && old_pos.y == word.pos.y
+    }
+
+    fn word_get_reward(speed: f32, color_changing: bool, label:String) -> bool {
+        let mock_sprite = Box::new(MockSprite { width: 100.0, height: 100.0});
+        let point = Point2 {
+            x: 0.0,
+            y: 0.0
+        };
+        let mut word = Word::new(&label, point, speed, mock_sprite, color_changing).unwrap();
+        let reward = word.get_reward();
+        let color_multiplayer = {
+            if color_changing {
+                2.0;
+            }
+
+            1.0
+        };
+
+        let expected_reward = speed * color_multiplayer * (label.len() as f32) / 100.0;
+
+
+      (reward - expected_reward).abs() < f32::EPSILON
+    }
 }
