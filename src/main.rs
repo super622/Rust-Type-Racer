@@ -53,7 +53,7 @@ struct MainState {
     game_over: bool,
     saved_score: bool,
     current_input: String,
-    cash: u32,
+    cash: f32,
     score: f32,
     remaining_lifes: u32,
     words: Vec<Word>,
@@ -70,9 +70,9 @@ struct MainState {
 }
 
 impl MainState {
-    const BUY_LIFE_TAX: u32 = 300;
-    const REMOVE_WORDS_TAX: u32 = 350;
-    const SLOW_WORD_SPAWN_TAX: u32 = 1000;
+    const BUY_LIFE_TAX: f32 = 300.0;
+    const REMOVE_WORDS_TAX: f32 = 350.0;
+    const SLOW_WORD_SPAWN_TAX: f32 = 1000.0;
     const REMOVE_WORDS_COUNT: usize = 2;
     const INITAL_SOUND_VOLUME: f32 = 0.05;
     const SOUND_VOLUME_STEP: f32 = 0.005;
@@ -80,7 +80,7 @@ impl MainState {
     const TOP_PANEL_TEXT_SIZE: f32 = 34.0;
     const BOT_PANEL_TEXT_SIZE: f32 = 40.0;
     const CENTER_PANEL_TEXT_SIZE: f32 = 40.0;
-    const SHAKE_DURATION: f32 = 1.00;
+    const SHAKE_DURATION: f32 = 1.0;
     const SHAKE_MAGNITUDE: f32 = 3.0;
 
     fn new(ctx: &mut Context, conf: &Conf) -> GameResult<MainState> {
@@ -94,9 +94,9 @@ impl MainState {
 (-) to volume down
 
 Buffs become visible when you have the required cash:
-(1) for extra life  ({}$)
-(2) for words removal  ({}$)
-(3) for slow words spawn  ({}$)
+(1) for extra life  ({:.2}$)
+(2) for words removal  ({:.2}$)
+(3) for slow words spawn  ({:.2}$)
 
 (Esc) to quit",
                            MainState::BUY_LIFE_TAX,
@@ -104,13 +104,13 @@ Buffs become visible when you have the required cash:
                            MainState::SLOW_WORD_SPAWN_TAX);
         let info_panel = TextSprite::new(&info_panel_label, ctx, MainState::CENTER_PANEL_TEXT_SIZE)?;
 
-        let slow_word_spawn_label = format!("(3) Slow spawn ({}$)", MainState::SLOW_WORD_SPAWN_TAX);
+        let slow_word_spawn_label = format!("(3) Slow spawn ({:.2}$)", MainState::SLOW_WORD_SPAWN_TAX);
         let slow_word_spawn_panel = TextSprite::new(&slow_word_spawn_label, ctx, MainState::TOP_PANEL_TEXT_SIZE)?;
 
-        let remove_words_label = format!("(2) Remove {} words ({}$)",MainState::REMOVE_WORDS_COUNT , MainState::REMOVE_WORDS_TAX);
+        let remove_words_label = format!("(2) Remove {} words ({:.2}$)",MainState::REMOVE_WORDS_COUNT , MainState::REMOVE_WORDS_TAX);
         let remove_words_panel = TextSprite::new(&remove_words_label, ctx, MainState::TOP_PANEL_TEXT_SIZE)?;
 
-        let extra_life_label = format!("(1) extra life ({}$)", MainState::BUY_LIFE_TAX);
+        let extra_life_label = format!("(1) extra life ({:.2}$)", MainState::BUY_LIFE_TAX);
         let extra_life_panel = TextSprite::new(&extra_life_label, ctx, MainState::TOP_PANEL_TEXT_SIZE)?;
 
         let mut power_up_panels = Vec::new();
@@ -127,7 +127,7 @@ Buffs become visible when you have the required cash:
             game_over: false,
             saved_score: false,
             current_input: String::new(),
-            cash: 0,
+            cash: 0.0,
             score: 0.0,
             remaining_lifes: 5,
             words: Vec::new(),
@@ -159,9 +159,10 @@ impl event::EventHandler for MainState {
         {
             let seconds = 1.0 / (FPS_CAP as f32);
 
+            // Screen shaker
             self.time_until_shake -= seconds;
             if self.time_until_shake <= 0.0 {
-                self.time_until_shake = 10.0;
+                self.time_until_shake = self.rng.gen_range(5.0 .. 20.0);
                 self.shake_screen = true;
             }
 
@@ -173,7 +174,7 @@ impl event::EventHandler for MainState {
                 }
             }
 
-            // Spawn  words
+            // Spawn words
             self.time_until_next_word -= seconds;
             if self.time_until_next_word <= 0.0 {
                 let margin = 10.0;
@@ -187,8 +188,8 @@ impl event::EventHandler for MainState {
                 let random_word = self.words_pool[self.rng.gen_range(0 .. self.words_pool.len())].clone();
                 
                 let random_speed = self.rng.gen_range(100.0 .. 300.0);
-    
-                let is_color_changing = self.rng.gen_range(0 ..= 100) < 30;
+                let percentage: u8 = self.rng.gen_range(0 ..= 100);
+                let is_color_changing = percentage < 30;
                 let word_sprite = Box::new(TextSprite::new(&random_word, ctx, 32.0)?);
                 let word = Word::new(&random_word, random_point, random_speed, word_sprite, is_color_changing)?;
     
@@ -204,24 +205,13 @@ impl event::EventHandler for MainState {
     
                 if word.label() == self.current_input {
                     word.is_typed = true;
-                    let color_multi = {
-                        if word.is_color_changing {
-                            2.0;
-                        }
+                    
+                    self.score += word.get_reward();
+                    self.cash += word.get_reward();
 
-                        1.0
-                    };
-                    self.score += word.get_speed() * color_multi * word.get_len() / 100.0;
                     self.assets.word_typed_sound.set_volume(self.sound_volume);
                     let _ = self.assets.word_typed_sound.play(ctx);
 
-                    // color chaning words give more points
-                    if word.is_color_changing {
-                        self.cash += 20;
-                    }
-                    else {
-                        self.cash += 10;
-                    }
                     // clear the input field after successfully typed word
                     self.current_input = String::new();
                 }
@@ -263,13 +253,17 @@ impl event::EventHandler for MainState {
                     self.cash -= MainState::REMOVE_WORDS_TAX;
 
                     if self.words.len() <= MainState::REMOVE_WORDS_COUNT {
-                        self.words.iter_mut().for_each(|word| word.is_typed = true);
+                        self.words.iter_mut().for_each(|word| {
+                            word.is_typed = true;
+                            self.score += word.get_reward();
+                        });
                     }
                     else {
                         let sample_indexes = seq::index::sample(&mut self.rng, self.words.len(), MainState::REMOVE_WORDS_COUNT);
 
                         for index in sample_indexes.iter() {
                             self.words[index].is_typed = true;
+                            self.score += self.words[index].get_reward();
                         }
                     }
                 }
@@ -498,7 +492,7 @@ impl event::EventHandler for MainState {
         options_panel.draw(top_left, game_status_panel_color, ctx).unwrap();
         top_left.x += options_panel.width(ctx);
 
-        let current_volume_label = format!("Volume: {:.3}", self.sound_volume);
+        let current_volume_label = format!("Volume: {:.0}", self.sound_volume * 100.0);
         let mut current_volume_panel = TextSprite::new(&current_volume_label, ctx, MainState::TOP_PANEL_TEXT_SIZE).unwrap();
         top_left.x += label_margin;
         current_volume_panel.draw(top_left, game_status_panel_color, ctx).unwrap();
@@ -511,7 +505,7 @@ impl event::EventHandler for MainState {
 
         translate(&mut bottom_right, &shake_translation);
 
-        let cash_label = format!("Cash: {}", self.cash);
+        let cash_label = format!("Cash: {:.2}", self.cash);
         let mut cash_panel = TextSprite::new(&cash_label, ctx, MainState::BOT_PANEL_TEXT_SIZE).unwrap();
         bottom_right.x -= cash_panel.width(ctx) + label_margin;
         bottom_right.y -= cash_panel.height(ctx);
@@ -560,6 +554,11 @@ impl event::EventHandler for MainState {
 
         for word in self.words.iter_mut() {
             word.translate(shake_translation);
+
+            if !self.shake_screen {
+                word.reset_translation();
+            }
+
             word.draw(ctx)?;
         }
 
@@ -606,6 +605,11 @@ fn save_score(ctx: &Context, username: String, score: f32) -> Vec<String> {
     if filesystem::exists(ctx, "/scoring.data") {
         let mut scores = read_file_by_lines(ctx, "/scoring.data");
 
+        // check for empty line at the end
+        if scores.len() > 0 && scores[scores.len() - 1] == "" {
+            scores.pop();
+        }
+
         let mut new_line = format!("{} {:.2}", username, score);
         let mut insert = false;
         for line in scores.iter_mut() {
@@ -622,7 +626,7 @@ fn save_score(ctx: &Context, username: String, score: f32) -> Vec<String> {
             }
         }
 
-        if scores.len() <= MainState::SCOREBOARD_SIZE
+        if scores.len() < MainState::SCOREBOARD_SIZE
         {
             scores.push(new_line);
         }

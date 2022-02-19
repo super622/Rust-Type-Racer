@@ -11,6 +11,7 @@ pub struct Word {
     pub pos: Point2<f32>,
     pub is_typed: bool,
     pub is_color_changing: bool,
+    real_pos: Point2<f32>,
     rng: ThreadRng,
     label: String,
     velocity: Vector2<f32>,
@@ -25,6 +26,7 @@ impl Word {
             pos,
             is_typed: false,
             is_color_changing,
+            real_pos: pos,
             rng: rand::thread_rng(),
             label,
             velocity: Vector2 { x: speed, y: 0.0 },
@@ -39,6 +41,9 @@ impl Word {
     pub fn update(&mut self, seconds: f32) {
         self.pos.x += self.velocity.x * seconds;
         self.pos.y += self.velocity.y * seconds;
+
+        self.real_pos.x += self.velocity.x * seconds;
+        self.real_pos.y += self.velocity.y * seconds;
     }
 
     pub fn translate(&mut self, translation: Point2<f32>) {
@@ -46,12 +51,21 @@ impl Word {
         self.pos.y += translation.y;
     }
 
-    pub fn get_speed(&mut self) -> f32 {
-        self.velocity.x
+    pub fn reset_translation(&mut self) {
+        self.pos.x = self.real_pos.x;
+        self.pos.y = self.real_pos.y;
     }
 
-    pub fn get_len(&mut self) -> f32 {
-        self.label.len() as f32
+    pub fn get_reward(&mut self) -> f32 {
+        let color_multi = {
+            if self.is_color_changing {
+                2.0;
+            }
+
+            1.0
+        };
+
+        self.velocity.x * color_multi * (self.label.len() as f32) / 100.0
     }
 
     pub fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {

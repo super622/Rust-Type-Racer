@@ -29,7 +29,7 @@ impl Sprite for MockSprite {
 quickcheck! {
     fn words_move_left(x: f32, y: f32) -> bool {
         let mock_sprite = Box::new(MockSprite { width: 100.0, height: 100.0});
-        let mut word = Word::new("something", Point2 { x, y}, 10.0, mock_sprite, false).unwrap();
+        let mut word = Word::new("something", Point2 { x, y }, 10.0, mock_sprite, false).unwrap();
 
         let old_pos = word.pos.clone();
         word.update(10.0);
