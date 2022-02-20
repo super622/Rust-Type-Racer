@@ -4,7 +4,7 @@ Type racer is a single player game, created with the [ggez](https://ggez.rs/) fr
 
 The idea here is a little bit different from the classic game. Words are comming from the left side of the screen and go to the right. The player should write the incoming words without typo and earn points. If you leave a word to get to the right side of the screen you lose 1 life. If you lose all of your lifes -> Game Over :/\. The question is how far can you get and how much points you can earn? :)
 
-## Buffs && Nurfs
+## Buffs && Nerfs
 
 ### Buffs:
 - instant random words removal from the screen
@@ -17,7 +17,7 @@ The idea here is a little bit different from the classic game. Words are comming
 - screen shaking
 
 ## Scoreboard
-The scoreboard is haved in the user home directory.
+The scoreboard is saved in the user home directory.
 
 For Linux:
 ```
